@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { useRef } from 'react';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -28,6 +29,12 @@ export default function PostScreen() {
   const [urgency, setUrgency] = useState('medium');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errors, setErrors] = useState({
+    title: '',
+    description: '',
+    location: '',
+    category: '',
+  });
   
   const router = useRouter();
 
@@ -45,10 +52,59 @@ export default function PostScreen() {
     medium: { label: 'Medium', color: '#FF9500', icon: 'alert-circle' },
     high: { label: 'High', color: '#FF3B30', icon: 'warning' },
   };
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     checkLoginStatus();
   }, []);
+
+  const validateField = (field: string, value: string) => {
+    switch (field) {
+      case 'title':
+        return value.trim() ? '' : 'Problem title is required';
+      case 'description':
+        return value.trim() ? '' : 'Description is required';
+      case 'location':
+        return value.trim() ? '' : 'Location is required';
+      case 'category':
+        return value ? '' : 'Category is required';
+      default:
+        return '';
+    }
+  };
+
+  const fieldRefs = {
+  title: useRef<View>(null),
+  description: useRef<View>(null),
+  location: useRef<View>(null),
+  category: useRef<View>(null),
+}
+
+  const handleFieldChange = (field: string, value: string) => {
+    // Update the field value
+    switch (field) {
+      case 'title':
+        setTitle(value);
+        break;
+      case 'description':
+        setDescription(value);
+        break;
+      case 'location':
+        setLocation(value);
+        break;
+      case 'category':
+        setCategory(value);
+        break;
+    }
+
+    // Clear error when user starts typing
+    if (errors[field as keyof typeof errors]) {
+      setErrors(prev => ({
+        ...prev,
+        [field]: ''
+      }));
+    }
+  };
 
   const checkLoginStatus = async () => {
     try {
@@ -141,10 +197,40 @@ export default function PostScreen() {
       return;
     }
 
-    if (!description || !category) {
-      Alert.alert('Error', 'Please fill in description and category');
-      return;
+    // Validate all fields
+    const newErrors = {
+      title: validateField('title', title),
+      description: validateField('description', description),
+      location: validateField('location', location),
+      category: validateField('category', category),
+    };
+
+    setErrors(newErrors);
+
+    // Check if any errors exist
+    const hasErrors = Object.values(newErrors).some(error => error !== '');
+    if (hasErrors) {
+    const firstErrorField = Object.keys(newErrors).find(key => newErrors[key as keyof typeof newErrors] !== '');
+    
+    if (firstErrorField && fieldRefs[firstErrorField as keyof typeof fieldRefs]?.current) {
+      setTimeout(() => {
+        fieldRefs[firstErrorField as keyof typeof fieldRefs].current?.measureLayout(
+          scrollViewRef.current?.getInnerViewNode(),
+          (x, y, width, height) => {
+            scrollViewRef.current?.scrollTo({
+              y: y - 100, // Scroll a bit above the field for better visibility
+              animated: true
+            });
+          },
+          () => {
+            // Fallback if measureLayout fails
+            scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+          }
+        );
+      }, 100);
     }
+    return;
+  }
 
     setIsSubmitting(true);
 
@@ -167,8 +253,8 @@ export default function PostScreen() {
         console.log('GPS fetch error:', locErr);
       }
 
-      if (!finalLocation) {
-        Alert.alert('Error', 'Unable to get location. Please enter it manually.');
+      if (!finalLocation?.trim()) {
+        setErrors(prev => ({ ...prev, location: 'Unable to get location. Please enter it manually.' }));
         setIsSubmitting(false);
         return;
       }
@@ -231,6 +317,7 @@ export default function PostScreen() {
               setCategory('');
               setImage(null);
               setUrgency('medium');
+              setErrors({ title: '', description: '', location: '', category: '' });
               router.push('/');
             },
           },
@@ -308,6 +395,7 @@ export default function PostScreen() {
       </View>
 
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -315,55 +403,68 @@ export default function PostScreen() {
         {/* Form Container */}
         <View style={styles.formContainer}>
           {/* Problem Title */}
-          <View style={styles.inputCard}>
+          <View style={styles.inputCard} ref={fieldRefs.title}>
             <View style={styles.labelContainer}>
               <Ionicons name="document-text" size={18} color="#6366F1" />
-              <Text style={styles.label}>Problem Title</Text>
+              <Text style={styles.label}>Problem Title *</Text>
             </View>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                errors.title && styles.inputError
+              ]}
               placeholder="Brief description of the problem"
               value={title}
-              onChangeText={setTitle}
+              onChangeText={(value) => handleFieldChange('title', value)}
               editable={!isSubmitting}
             />
+            {errors.title ? <Text style={styles.errorText}>{errors.title}</Text> : null}
           </View>
 
           {/* Description */}
-          <View style={styles.inputCard}>
+          <View style={styles.inputCard} ref={fieldRefs.description}>
             <View style={styles.labelContainer}>
               <Ionicons name="create" size={18} color="#6366F1" />
               <Text style={styles.label}>Description *</Text>
             </View>
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[
+                styles.input,
+                styles.textArea,
+                errors.description && styles.inputError
+              ]}
               placeholder="Detailed description of the issue..."
               value={description}
-              onChangeText={setDescription}
+              onChangeText={(value) => handleFieldChange('description', value)}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
               editable={!isSubmitting}
             />
+            {errors.description ? <Text style={styles.errorText}>{errors.description}</Text> : null}
           </View>
 
           {/* Location */}
-          <View style={styles.inputCard}>
+          <View style={styles.inputCard} ref={fieldRefs.location}>
             <View style={styles.labelContainer}>
               <Ionicons name="location" size={18} color="#6366F1" />
               <Text style={styles.label}>Location *</Text>
             </View>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                errors.location && styles.inputError
+              ]}
               placeholder="Where is this problem located?"
               value={location}
-              onChangeText={setLocation}
+              onChangeText={(value) => handleFieldChange('location', value)}
               editable={!isSubmitting}
             />
+            {errors.location ? <Text style={styles.errorText}>{errors.location}</Text> : null}
           </View>
 
           {/* Category */}
-          <View style={styles.inputCard}>
+          <View style={styles.inputCard} ref={fieldRefs.category}>
             <View style={styles.labelContainer}>
               <Ionicons name="grid" size={18} color="#6366F1" />
               <Text style={styles.label}>Category *</Text>
@@ -376,19 +477,21 @@ export default function PostScreen() {
                     styles.categoryButton,
                     category === cat.value && styles.categoryButtonActive,
                     isSubmitting && styles.disabledButton,
+                    errors.category && styles.categoryButtonError
                   ]}
-                  onPress={() => setCategory(cat.value)}
+                  onPress={() => handleFieldChange('category', cat.value)}
                   disabled={isSubmitting}
                 >
                   <Ionicons 
                     name={cat.icon as any} 
                     size={16} 
-                    color={category === cat.value ? '#FFFFFF' : '#6366F1'} 
+                    color={category === cat.value ? '#FFFFFF' : (errors.category ? '#DC2626' : '#6366F1')} 
                   />
                   <Text
                     style={[
                       styles.categoryButtonText,
                       category === cat.value && styles.categoryButtonTextActive,
+                      errors.category && styles.categoryButtonTextError
                     ]}
                   >
                     {cat.label}
@@ -396,6 +499,7 @@ export default function PostScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            {errors.category ? <Text style={styles.errorText}>{errors.category}</Text> : null}
           </View>
 
           {/* Urgency Level */}
@@ -592,8 +696,8 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   headerBackground: {
-    paddingTop: 60,
-    paddingBottom: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
     paddingHorizontal: 20,
   },
   headerContent: {
@@ -672,9 +776,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1E293B',
   },
+  inputError: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+  },
   textArea: {
     height: 120,
     textAlignVertical: 'top',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 14,
+    marginTop: 8,
+    fontWeight: '500',
   },
   categoryContainer: {
     flexDirection: 'row',
@@ -699,6 +813,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366F1',
     borderColor: '#6366F1',
   },
+  categoryButtonError: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+  },
   categoryButtonText: {
     fontSize: 14,
     color: '#64748B',
@@ -706,6 +824,9 @@ const styles = StyleSheet.create({
   },
   categoryButtonTextActive: {
     color: '#FFFFFF',
+  },
+  categoryButtonTextError: {
+    color: '#DC2626',
   },
   urgencyContainer: {
     flexDirection: 'row',
